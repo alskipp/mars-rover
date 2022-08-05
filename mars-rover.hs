@@ -5,8 +5,10 @@
 
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 import Test.Hspec
+import Data.Ix
 
 main :: IO ()
 main = do
@@ -14,6 +16,15 @@ main = do
   tests
 
 -- Data Types --
+
+data Bounds = Bounds
+  { horizontal :: (Int, Int),
+    vertical :: (Int, Int)
+  }
+  deriving stock (Show, Eq)
+
+mkBounds :: Int -> Int -> Bounds
+mkBounds x y = Bounds (0, x) (0, y)
 
 data Direction
   = F
@@ -28,6 +39,9 @@ data Orientation
   | W
   deriving stock (Show, Eq, Enum)
 
+data RoverLocation = RoverLocation {x :: Int, y :: Int, orientation :: Orientation}
+  deriving stock (Show, Eq)
+
 -- Functions --
 
 updateOrientation :: Orientation -> Direction -> Orientation
@@ -40,6 +54,10 @@ updateOrientation orientation = \case
     turnLeft d = pred d
     turnRight W = N
     turnRight d = succ d
+
+isValidLocation :: Bounds -> RoverLocation -> Bool
+isValidLocation Bounds {..} RoverLocation {..} =
+  inRange horizontal x && inRange vertical y
 
 -- Tests --
 
@@ -54,3 +72,9 @@ tests = hspec $ do
     it "should rotate counter clockwise" $ do
       updateOrientation N L `shouldBe` W
       updateOrientation S L `shouldBe` E
+
+  describe "Rover location checking" $ do
+    it "should be invalid location" $ do
+      isValidLocation (mkBounds 2 2) (RoverLocation 3 1 N) `shouldBe` False
+    it "should be valid location" $ do
+      isValidLocation (mkBounds 2 2) (RoverLocation 0 1 N) `shouldBe` True
