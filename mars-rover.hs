@@ -42,6 +42,8 @@ data Orientation
 data RoverLocation = RoverLocation {x :: Int, y :: Int, orientation :: Orientation}
   deriving stock (Show, Eq)
 
+type Result = Either RoverLocation RoverLocation
+
 -- Functions --
 
 updateOrientation :: Orientation -> Direction -> Orientation
@@ -55,9 +57,26 @@ updateOrientation orientation = \case
     turnRight W = N
     turnRight d = succ d
 
-isValidLocation :: Bounds -> RoverLocation -> Bool
-isValidLocation Bounds {..} RoverLocation {..} =
+isValidRoverLocation :: Bounds -> RoverLocation -> Bool
+isValidRoverLocation Bounds {..} RoverLocation {..} =
   inRange horizontal x && inRange vertical y
+
+updateRoverLocation :: Bounds -> RoverLocation -> Direction -> Result
+updateRoverLocation bounds previousRoverLocation@RoverLocation {..} =
+  mkResult . \case
+    F -> moveForward orientation
+    L -> RoverLocation {orientation = updateOrientation orientation L, ..}
+    R -> RoverLocation {orientation = updateOrientation orientation R, ..}
+  where
+    moveForward = \case
+      N -> RoverLocation {y = succ y, ..}
+      E -> RoverLocation {x = succ x, ..}
+      S -> RoverLocation {y = pred y, ..}
+      W -> RoverLocation {x = pred x, ..}
+    mkResult location =
+      if isValidRoverLocation bounds location
+        then Right location
+        else Left previousRoverLocation
 
 -- Tests --
 
@@ -75,6 +94,17 @@ tests = hspec $ do
 
   describe "Rover location checking" $ do
     it "should be invalid location" $ do
-      isValidLocation (mkBounds 2 2) (RoverLocation 3 1 N) `shouldBe` False
+      isValidRoverLocation (mkBounds 2 2) (RoverLocation 3 1 N) `shouldBe` False
     it "should be valid location" $ do
-      isValidLocation (mkBounds 2 2) (RoverLocation 0 1 N) `shouldBe` True
+      isValidRoverLocation (mkBounds 2 2) (RoverLocation 0 1 N) `shouldBe` True
+
+  describe "Update rover location" $ do
+    it "should rotate and stay in same location" $ do
+      updateRoverLocation (mkBounds 0 0) (RoverLocation 0 0 N) L `shouldBe` Right (RoverLocation 0 0 W)
+      updateRoverLocation (mkBounds 0 0) (RoverLocation 0 0 W) R `shouldBe` Right (RoverLocation 0 0 N)
+    it "should move north 1 unit" $ do
+      updateRoverLocation (mkBounds 2 2) (RoverLocation 0 0 N) F `shouldBe` Right (RoverLocation 0 1 N)
+    it "should move east 1 unit" $ do
+      updateRoverLocation (mkBounds 2 2) (RoverLocation 0 0 E) F `shouldBe` Right (RoverLocation 1 0 E)
+    it "should be lost!" $ do
+      updateRoverLocation (mkBounds 0 0) (RoverLocation 0 0 E) F `shouldBe` Left (RoverLocation 0 0 E)
