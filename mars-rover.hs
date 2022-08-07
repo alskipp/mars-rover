@@ -1,22 +1,39 @@
 #! /usr/bin/env nix-shell
 #! nix-shell -p ghcid
-#! nix-shell -p "haskellPackages.ghcWithPackages (p: [p.hspec])"
+#! nix-shell -p "haskellPackages.ghcWithPackages (p: [p.hspec p.hspec-megaparsec p.megaparsec])"
 #! nix-shell -i "ghcid -c 'ghci -Wall' -T main"
 
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-import Data.Foldable (foldl')
+import Data.Foldable (foldl', traverse_)
 import Data.Ix
+import Data.Void
 import Test.Hspec
+import Test.Hspec.Megaparsec
+import qualified Text.Megaparsec as M
+import qualified Text.Megaparsec.Char as M
 
 main :: IO ()
 main = do
   putStrLn "Hello Mars!"
-  tests
+  printSimulation $
+    MarsState
+      (mkBounds 4 8)
+      [ (RoverLocation 2 3 E, [L, F, R, F, F]),
+        (RoverLocation 0 2 N, [F, F, L, F, R, F, F])
+      ]
+  printSimulation $
+    MarsState
+      (mkBounds 4 8)
+      [ (RoverLocation 2 3 N, [F, L, L, F, R]),
+        (RoverLocation 1 0 S, [F, F, R, L, F])
+      ]
+  runTests
 
--- Data Types --
+-- ++ Data Types ++ --
 
 data Bounds = Bounds
   { horizontal :: (Int, Int),
@@ -53,7 +70,7 @@ data MarsState = MarsState
 -- If the rover fails to land there won't be a previous location in the error case
 type Result = Either (Maybe RoverLocation) RoverLocation
 
--- Functions --
+-- ++ Functions ++ --
 
 updateOrientation :: Orientation -> Direction -> Orientation
 updateOrientation orientation = \case
@@ -102,10 +119,66 @@ runSimulation :: MarsState -> [Result]
 runSimulation MarsState {..} =
   fmap (runCommands bounds) rovers
 
--- Tests --
+printSimulation :: MarsState -> IO ()
+printSimulation marsState = do
+  traverse_ putStrLn (prettyResult <$> runSimulation marsState)
 
-tests :: IO ()
-tests = hspec $ do
+prettyResult :: Result -> String
+prettyResult = \case
+  Left Nothing -> "Rover failed to land!"
+  Left (Just RoverLocation {..}) -> "(" <> show x <> ", " <> show y <> ", " <> show orientation <> ") Lost"
+  Right (RoverLocation {..}) -> "(" <> show x <> ", " <> show y <> ", " <> show orientation <> ")"
+
+-- ++ Parsing ++ --
+
+type Parser = M.Parsec Void String
+
+parseNum :: (Num a, Read a) => Parser a
+parseNum = read <$> M.some M.digitChar
+
+parseBounds :: Parser Bounds
+parseBounds = mkBounds <$> (parseNum <* M.space) <*> parseNum
+
+parseOrientation :: Parser Orientation
+parseOrientation =
+  M.choice
+    [ N <$ M.char 'N',
+      E <$ M.char 'E',
+      S <$ M.char 'S',
+      W <$ M.char 'W'
+    ]
+
+parseDirection :: Parser Direction
+parseDirection =
+  M.choice
+    [ F <$ M.char 'F',
+      L <$ M.char 'L',
+      R <$ M.char 'R'
+    ]
+
+parseRoverLocation :: Parser RoverLocation
+parseRoverLocation =
+  RoverLocation
+    <$> (M.char '(' *> parseNum)
+    <*> (M.string ", " *> parseNum)
+    <*> (M.string ", " *> parseOrientation <* M.char ')')
+
+parseMarsState :: Parser MarsState
+parseMarsState =
+  MarsState
+    <$> (parseBounds <* M.newline)
+    <*> parseRover `M.sepBy` M.newline
+  where
+    parseRover :: Parser (RoverLocation, [Direction])
+    parseRover =
+      (,)
+        <$> (parseRoverLocation <* M.space)
+        <*> M.many parseDirection
+
+-- ++ Tests ++ --
+
+runTests :: IO ()
+runTests = hspec $ do
   describe "Update orientation" $ do
     it "should not change direction when moving forward" $ do
       updateOrientation N F `shouldBe` N
@@ -146,6 +219,12 @@ tests = hspec $ do
                      Left Nothing,
                      Left $ Just (RoverLocation 0 2 W)
                    ]
+
+  describe "Parse Mars State" $ do
+    it "should parse input" $ do
+      M.parse parseMarsState "" "4 8\n(2, 3, N) FLLFR\n(1, 0, S) FFRLF" `shouldParse` marsParse
+    it "should not parse input" $ do
+      M.parse parseMarsState "" `shouldFailOn` "0 1\n(1, 2, Q) FRF\n(2, 0, W)"
   where
     mars1 = MarsState (mkBounds 2 2) [(RoverLocation 3 0 N, [F, F])]
     mars2 =
@@ -155,3 +234,7 @@ tests = hspec $ do
           (RoverLocation 5 0 N, [F, F]),
           (RoverLocation 0 0 N, [F, F, L, F])
         ]
+    marsParse =
+      MarsState
+        (mkBounds 4 8)
+        [(RoverLocation 2 3 N, [F, L, L, F, R]), (RoverLocation 1 0 S, [F, F, R, L, F])]
