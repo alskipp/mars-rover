@@ -1,7 +1,7 @@
 #! /usr/bin/env nix-shell
 #! nix-shell -p ghcid
 #! nix-shell -p "haskellPackages.ghcWithPackages (p: [p.hspec p.hspec-megaparsec p.megaparsec])"
-#! nix-shell -i "ghcid -c 'ghci -Wall' -T main"
+#! nix-shell -i "ghcid -c 'ghci -Wall' -T _test"
 
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
@@ -11,6 +11,7 @@
 import Data.Foldable (foldl', traverse_)
 import Data.Ix
 import Data.Void
+import System.Environment
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import qualified Text.Megaparsec as M
@@ -18,6 +19,14 @@ import qualified Text.Megaparsec.Char as M
 
 main :: IO ()
 main = do
+  (f : _) <- getArgs
+  content <- readFile f
+  case M.runParser parseMarsState "" content of
+    Left e -> print e
+    Right v -> printSimulation v
+
+_test :: IO ()
+_test = do
   putStrLn "Hello Mars!"
   printSimulation $
     MarsState
@@ -167,7 +176,7 @@ parseMarsState :: Parser MarsState
 parseMarsState =
   MarsState
     <$> (parseBounds <* M.newline)
-    <*> parseRover `M.sepBy` M.newline
+    <*> M.some (parseRover <* M.many M.newline)
   where
     parseRover :: Parser (RoverLocation, [Direction])
     parseRover =
