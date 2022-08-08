@@ -22,7 +22,7 @@ main = do
   (f : _) <- getArgs
   content <- readFile f
   case M.runParser parseMarsState "" content of
-    Left e -> print e
+    Left e -> putStrLn $ M.errorBundlePretty e
     Right v -> printSimulation v
 
 _test :: IO ()
